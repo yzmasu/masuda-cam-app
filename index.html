@@ -7,11 +7,10 @@
   <style>
     body { margin: 0; overflow: hidden; background: #000; }
     #container { position: relative; width: 100vw; height: 100dvh; }
-    /* 今回から、video自体は隠して、合成結果をcanvasにだけ描画します */
     video { display: none; }
     canvas { 
       position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; 
-      transform: scaleX(-1); /* インカメラ用に鏡のように左右反転させます */
+      transform: scaleX(-1); /* インカメラ用に鏡のように左右反転 */
     }
     #shutter {
       position: absolute; 
@@ -36,27 +35,28 @@
     <button id="start_btn">カメラを起動</button>
   </div>
 
- <script>
+  <script>
     const videoElement = document.getElementById('input_video');
     const canvasElement = document.getElementById('output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
     const startBtn = document.getElementById('start_btn');
 
-    // ★追加1：画像の読み込み状態をチェックする仕組み
+    // イラスト（mask.png）の読み込み設定
     const maskImage = new Image();
-    maskImage.src = './mask.png'; // 念のため相対パス（./）に変更
+    maskImage.src = './mask.png'; 
     let isMaskLoaded = false;
     maskImage.onload = () => { isMaskLoaded = true; };
     maskImage.onerror = () => { alert("イラスト画像の読み込みに失敗しました。ファイル名を確認してください。"); };
 
+    // 顔が見つかった時に毎フレーム呼ばれる処理
     function onResults(results) {
       canvasElement.width = videoElement.videoWidth;
       canvasElement.height = videoElement.videoHeight;
 
-      // カメラ映像を描画
+      // 1. カメラ映像を描画
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-      // ★追加2：画面左上に赤い文字でステータスを表示（デバッグ用）
+      // --- デバッグ用の文字表示（動作確認ができたら後で消します） ---
       canvasCtx.font = "24px sans-serif";
       canvasCtx.fillStyle = "red";
 
@@ -66,13 +66,28 @@
         if (isMaskLoaded) {
           canvasCtx.fillText("画像：OK！", 20, 80);
           
-          // 顔にイラストをかぶせる処理
+          // 2. 顔の座標を取得（エラーが起きない安全な計算方法）
           const bbox = results.detections[0].boundingBox;
-          const width = bbox.width * canvasElement.width * 1.5; 
-          const height = bbox.height * canvasElement.height * 1.5;
-          const x = (bbox.xMin * canvasElement.width) - (width - bbox.width * canvasElement.width) / 2;
-          const y = (bbox.yMin * canvasElement.height) - (height - bbox.height * canvasElement.height) / 2 - 30;
-          canvasCtx.drawImage(maskImage, x, y, width, height);
+          const faceWidth = bbox.width * canvasElement.width;
+          const faceHeight = bbox.height * canvasElement.height;
+          
+          const faceLeft = (bbox.xmin !== undefined) 
+            ? (bbox.xmin * canvasElement.width) 
+            : (bbox.xCenter * canvasElement.width) - (faceWidth / 2);
+            
+          const faceTop = (bbox.ymin !== undefined) 
+            ? (bbox.ymin * canvasElement.height) 
+            : (bbox.yCenter * canvasElement.height) - (faceHeight / 2);
+
+          // 3. イラストのサイズと位置を調整して描画
+          const drawWidth = faceWidth * 1.5; 
+          const drawHeight = faceHeight * 1.5;
+          const x = faceLeft - (drawWidth - faceWidth) / 2;
+          const y = faceTop - (drawHeight - faceHeight) / 2 - 30;
+
+          // ついにイラストを描画！
+          canvasCtx.drawImage(maskImage, x, y, drawWidth, drawHeight);
+          
         } else {
           canvasCtx.fillText("画像：読み込み中...", 20, 80);
         }
@@ -81,7 +96,7 @@
       }
     }
 
-    // 顔認識エンジンの設定
+    // 顔認識AI（MediaPipe）の初期設定
     const faceDetection = new FaceDetection({locateFile: (file) => {
       return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`;
     }});
@@ -91,7 +106,7 @@
     });
     faceDetection.onResults(onResults);
 
-    // カメラの起動処理
+    // カメラの起動とAIへの映像送信ループ
     async function setupCamera() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -116,6 +131,7 @@
       }
     }
 
+    // ボタンを押したら起動
     startBtn.addEventListener('click', setupCamera);
   </script>
 </body>
