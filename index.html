@@ -5,16 +5,13 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
   <style>
-    body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+    body { margin: 0; overflow: hidden; background: #000; }
     #container { position: relative; width: 100vw; height: 100dvh; }
     video { display: none; }
     canvas { 
       position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; 
-      /* ★インカメラ用に鏡のような左右反転を復活させました */
-      transform: scaleX(-1); 
+      transform: scaleX(-1); /* 鏡のように左右反転 */
     }
-    
-    /* 撮影ボタン */
     #shutter {
       position: absolute; 
       bottom: calc(40px + env(safe-area-inset-bottom)); 
@@ -23,14 +20,12 @@
       border: 6px solid rgba(0,0,0,0.2); box-shadow: 0 0 10px rgba(0,0,0,0.5);
       z-index: 10;
     }
-    #shutter:active { background: #ccc; }
-
-    /* 起動ボタン */
+    #shutter:active { background: #ccc; } /* 押した時に色を変える */
     #start_btn {
       position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
       padding: 15px 30px; font-size: 18px; font-weight: bold;
       background-color: #007AFF; color: white; border: none; border-radius: 8px;
-      z-index: 30; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+      z-index: 20;
     }
   </style>
 </head>
@@ -46,8 +41,8 @@
     const videoElement = document.getElementById('input_video');
     const canvasElement = document.getElementById('output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
-    const shutterBtn = document.getElementById('shutter');
     const startBtn = document.getElementById('start_btn');
+    const shutterBtn = document.getElementById('shutter');
 
     const maskImage = new Image();
     maskImage.src = './mask.png'; 
@@ -73,17 +68,70 @@
           ? (bbox.ymin * canvasElement.height) 
           : (bbox.yCenter * canvasElement.height) - (faceHeight / 2);
 
-        // サイズ2.7倍
-        const drawWidth = faceWidth * 2.7; 
-        const drawHeight = faceHeight * 2.7;
+        // ★サイズを2.3倍に大きくしました
+        const drawWidth = faceWidth * 2.3; 
+        const drawHeight = faceHeight * 2.3;
         
-        // 位置の微調整
+        // 中心を合わせつつ、お面なので少しだけ上に配置
         const x = faceLeft - (drawWidth - faceWidth) / 2;
-        const y = faceTop - (drawHeight - faceHeight) / 2 - (faceHeight * 0.3);
+        const y = faceTop - (drawHeight - faceHeight) / 2 - (faceHeight * 0.2);
 
         canvasCtx.drawImage(maskImage, x, y, drawWidth, drawHeight);
       }
     }
 
     const faceDetection = new FaceDetection({locateFile: (file) => {
-      return
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`;
+    }});
+    faceDetection.setOptions({ model: 'short', minDetectionConfidence: 0.5 });
+    faceDetection.onResults(onResults);
+
+    async function setupCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" },
+          audio: false,
+        });
+        videoElement.srcObject = stream;
+        videoElement.addEventListener('play', () => {
+          const loop = async () => {
+            if (!videoElement.paused && !videoElement.ended) {
+              await faceDetection.send({image: videoElement});
+              requestAnimationFrame(loop);
+            }
+          };
+          loop();
+        });
+        startBtn.style.display = 'none'; 
+      } catch (err) {
+        alert("カメラの起動に失敗しました。");
+      }
+    }
+
+    // ★写真撮影と共有メニューの起動
+    async function takePhoto() {
+      // 現在のCanvasの状態をBlob（データ塊）に変換
+      canvasElement.toBlob(async (blob) => {
+        const file = new File([blob], "mask_photo.png", { type: "image/png" });
+        
+        // iPhoneの共有メニューを呼び出す
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: '増田さんのイラストカメラ',
+            });
+          } catch (err) {
+            console.log("共有がキャンセルされました");
+          }
+        } else {
+          alert("このブラウザは写真の保存に対応していません。");
+        }
+      }, 'image/png');
+    }
+
+    startBtn.addEventListener('click', setupCamera);
+    shutterBtn.addEventListener('click', takePhoto);
+  </script>
+</body>
+</html>
