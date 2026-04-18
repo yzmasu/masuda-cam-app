@@ -10,6 +10,7 @@
     video { display: none; }
     canvas { 
       position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; 
+      /* ★インカメラ用に鏡のような左右反転を復活させました */
       transform: scaleX(-1); 
     }
     
@@ -24,19 +25,7 @@
     }
     #shutter:active { background: #ccc; }
 
-    /* カメラ切り替えボタン */
-    #switch_btn {
-      position: absolute; 
-      top: calc(20px + env(safe-area-inset-top)); 
-      right: 20px;
-      width: 50px; height: 50px; 
-      background: rgba(0,0,0,0.4); color: white;
-      border-radius: 50%; border: 2px solid white; font-size: 24px;
-      display: flex; justify-content: center; align-items: center; 
-      z-index: 20;
-    }
-
-    /* 復活させた起動ボタン */
+    /* 起動ボタン */
     #start_btn {
       position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
       padding: 15px 30px; font-size: 18px; font-weight: bold;
@@ -50,7 +39,6 @@
     <video id="input_video" autoplay playsinline></video>
     <canvas id="output_canvas"></canvas>
     <div id="shutter"></div>
-    <div id="switch_btn">🔄</div>
     <button id="start_btn">カメラを起動</button>
   </div>
 
@@ -59,15 +47,12 @@
     const canvasElement = document.getElementById('output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
     const shutterBtn = document.getElementById('shutter');
-    const switchBtn = document.getElementById('switch_btn');
     const startBtn = document.getElementById('start_btn');
 
     const maskImage = new Image();
     maskImage.src = './mask.png'; 
     let isMaskLoaded = false;
     maskImage.onload = () => { isMaskLoaded = true; };
-
-    let useFrontCamera = true;
 
     function onResults(results) {
       canvasElement.width = videoElement.videoWidth;
@@ -88,11 +73,11 @@
           ? (bbox.ymin * canvasElement.height) 
           : (bbox.yCenter * canvasElement.height) - (faceHeight / 2);
 
-        // ★サイズを2.7倍に調整
+        // サイズ2.7倍
         const drawWidth = faceWidth * 2.7; 
         const drawHeight = faceHeight * 2.7;
         
-        // ★位置の微調整（2.7倍に合わせて中心と高さを最適化）
+        // 位置の微調整
         const x = faceLeft - (drawWidth - faceWidth) / 2;
         const y = faceTop - (drawHeight - faceHeight) / 2 - (faceHeight * 0.3);
 
@@ -101,68 +86,4 @@
     }
 
     const faceDetection = new FaceDetection({locateFile: (file) => {
-      return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`;
-    }});
-    faceDetection.setOptions({ model: 'short', minDetectionConfidence: 0.5 });
-    faceDetection.onResults(onResults);
-
-    let isPlaying = false;
-    videoElement.addEventListener('play', () => {
-      if (isPlaying) return;
-      isPlaying = true;
-      const loop = async () => {
-        if (!videoElement.paused && !videoElement.ended) {
-          await faceDetection.send({image: videoElement});
-          requestAnimationFrame(loop);
-        } else {
-          isPlaying = false;
-        }
-      };
-      loop();
-    });
-
-    async function setupCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: useFrontCamera ? "user" : "environment" },
-          audio: false,
-        });
-        videoElement.srcObject = stream;
-        canvasElement.style.transform = useFrontCamera ? "scaleX(-1)" : "scaleX(1)";
-        
-        // 起動に成功したらボタンを消す
-        startBtn.style.display = 'none';
-      } catch (err) {
-        alert("カメラの起動に失敗しました。設定を確認してください。");
-      }
-    }
-
-    switchBtn.addEventListener('click', async () => {
-      if (videoElement.srcObject) {
-        videoElement.srcObject.getTracks().forEach(track => track.stop());
-      }
-      useFrontCamera = !useFrontCamera;
-      await setupCamera();
-    });
-
-    async function takePhoto() {
-      canvasElement.toBlob(async (blob) => {
-        const file = new File([blob], "mask_photo.png", { type: "image/png" });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          try {
-            await navigator.share({ files: [file], title: '増田さんのイラストカメラ' });
-          } catch (err) {
-            console.log("共有キャンセル");
-          }
-        } else {
-          alert("保存に対応していません。");
-        }
-      }, 'image/png');
-    }
-    shutterBtn.addEventListener('click', takePhoto);
-    
-    // ボタンをクリックしたときにカメラを起動
-    startBtn.addEventListener('click', setupCamera);
-  </script>
-</body>
-</html>
+      return
