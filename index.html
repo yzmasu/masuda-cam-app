@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; }
+    #container { position: relative; width: 100vw; height: 100vh; }
+    video, canvas { 
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; 
+    }
+    #shutter {
+      position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+      width: 70px; height: 70px; background: white; border-radius: 50%; border: 5px solid #ccc;
+      z-index: 10;
+    }
+    /* 追加：起動ボタンのデザイン */
+    #start_btn {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      padding: 15px 30px; font-size: 18px; font-weight: bold;
+      background-color: #007AFF; color: white; border: none; border-radius: 8px;
+      z-index: 20;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <video id="input_video" autoplay playsinline></video>
+    <canvas id="output_canvas"></canvas>
+    <div id="shutter"></div>
+    <button id="start_btn">カメラを起動</button>
+  </div>
+
+  <script>
+    const videoElement = document.getElementById('input_video');
+    const startBtn = document.getElementById('start_btn');
+
+    async function setupCamera() {
+      try {
+        // カメラのアクセス権限をリクエスト
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" }, // インカメラ
+          audio: false,
+        });
+        videoElement.srcObject = stream;
+        
+        // 無事に起動したら起動ボタンを隠す
+        startBtn.style.display = 'none'; 
+
+      } catch (err) {
+        // エラーが起きたらアラートで原因を表示する
+        alert("カメラの起動に失敗しました。\n原因: " + err.name + "\n" + err.message);
+      }
+    }
+
+    // 読み込み直後ではなく、ボタンを押した時に起動するよう変更
+    startBtn.addEventListener('click', setupCamera);
+  </script>
+</body>
+</html>
