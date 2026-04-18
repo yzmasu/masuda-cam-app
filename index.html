@@ -36,49 +36,58 @@
     <button id="start_btn">カメラを起動</button>
   </div>
 
-  <script>
+ <script>
     const videoElement = document.getElementById('input_video');
     const canvasElement = document.getElementById('output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
     const startBtn = document.getElementById('start_btn');
 
-    // GitHubにアップロードしたイラスト（mask.png）を読み込む
+    // ★追加1：画像の読み込み状態をチェックする仕組み
     const maskImage = new Image();
-    maskImage.src = 'mask.png'; 
+    maskImage.src = './mask.png'; // 念のため相対パス（./）に変更
+    let isMaskLoaded = false;
+    maskImage.onload = () => { isMaskLoaded = true; };
+    maskImage.onerror = () => { alert("イラスト画像の読み込みに失敗しました。ファイル名を確認してください。"); };
 
-    // ★顔が見つかった時に毎回呼ばれる処理★
     function onResults(results) {
-      // キャンバスのサイズをカメラ映像に合わせる
       canvasElement.width = videoElement.videoWidth;
       canvasElement.height = videoElement.videoHeight;
 
-      // 1. まずカメラの映像をそのまま描く
+      // カメラ映像を描画
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-      // 2. 顔が見つかったらイラストを上から重ねて描く
+      // ★追加2：画面左上に赤い文字でステータスを表示（デバッグ用）
+      canvasCtx.font = "24px sans-serif";
+      canvasCtx.fillStyle = "red";
+
       if (results.detections.length > 0) {
-        const bbox = results.detections[0].boundingBox; // 1人目の顔の枠
+        canvasCtx.fillText("顔認識：OK！", 20, 50);
 
-        // 顔のサイズより少し大きめ（1.5倍）にイラストのサイズを設定
-        const width = bbox.width * canvasElement.width * 1.5; 
-        const height = bbox.height * canvasElement.height * 1.5;
-        
-        // 顔の中心に合わせてイラストの位置を計算（少し上にずらすと自然です）
-        const x = (bbox.xMin * canvasElement.width) - (width - bbox.width * canvasElement.width) / 2;
-        const y = (bbox.yMin * canvasElement.height) - (height - bbox.height * canvasElement.height) / 2 - 30;
-
-        // イラストを描画！
-        canvasCtx.drawImage(maskImage, x, y, width, height);
+        if (isMaskLoaded) {
+          canvasCtx.fillText("画像：OK！", 20, 80);
+          
+          // 顔にイラストをかぶせる処理
+          const bbox = results.detections[0].boundingBox;
+          const width = bbox.width * canvasElement.width * 1.5; 
+          const height = bbox.height * canvasElement.height * 1.5;
+          const x = (bbox.xMin * canvasElement.width) - (width - bbox.width * canvasElement.width) / 2;
+          const y = (bbox.yMin * canvasElement.height) - (height - bbox.height * canvasElement.height) / 2 - 30;
+          canvasCtx.drawImage(maskImage, x, y, width, height);
+        } else {
+          canvasCtx.fillText("画像：読み込み中...", 20, 80);
+        }
+      } else {
+        canvasCtx.fillText("顔認識：探しています...", 20, 50);
       }
     }
 
-    // 顔認識エンジンの初期設定
+    // 顔認識エンジンの設定
     const faceDetection = new FaceDetection({locateFile: (file) => {
       return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`;
     }});
     faceDetection.setOptions({
-      model: 'short', // 自撮り（近い距離）用モード
-      minDetectionConfidence: 0.5 // 認識の感度
+      model: 'short',
+      minDetectionConfidence: 0.5
     });
     faceDetection.onResults(onResults);
 
@@ -91,12 +100,11 @@
         });
         videoElement.srcObject = stream;
         
-        // 映像が流れたら、パラパラ漫画のように超高速で顔認識エンジンに映像を送り続ける
         videoElement.addEventListener('play', () => {
           const loop = async () => {
             if (!videoElement.paused && !videoElement.ended) {
               await faceDetection.send({image: videoElement});
-              requestAnimationFrame(loop); // 次の描画タイミングで再度実行
+              requestAnimationFrame(loop);
             }
           };
           loop();
