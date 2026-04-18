@@ -1,28 +1,32 @@
 <!DOCTYPE html>
 <html>
 <head>
-<style>
-  body { margin: 0; overflow: hidden; background: #000; }
-  /* 変更1：100vh を 100dvh（スマホのメニューバーを除外した実際の高さ）に変更 */
-  #container { position: relative; width: 100vw; height: 100dvh; }
-  video, canvas { 
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; 
-  }
-  #shutter {
-    /* 変更2：bottomを少し上げ、さらにiPhoneの安全領域（セーフエリア）を考慮する設定を追加 */
-    position: absolute; 
-    bottom: calc(40px + env(safe-area-inset-bottom)); 
-    left: 50%; transform: translateX(-50%);
-    width: 70px; height: 70px; background: white; border-radius: 50%; border: 5px solid #ccc;
-    z-index: 10;
-  }
-  #start_btn {
-    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    padding: 15px 30px; font-size: 18px; font-weight: bold;
-    background-color: #007AFF; color: white; border: none; border-radius: 8px;
-    z-index: 20;
-  }
-</style>
+  <meta charset="utf-8">
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; }
+    #container { position: relative; width: 100vw; height: 100dvh; }
+    /* 今回から、video自体は隠して、合成結果をcanvasにだけ描画します */
+    video { display: none; }
+    canvas { 
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; 
+      transform: scaleX(-1); /* インカメラ用に鏡のように左右反転させます */
+    }
+    #shutter {
+      position: absolute; 
+      bottom: calc(40px + env(safe-area-inset-bottom)); 
+      left: 50%; transform: translateX(-50%);
+      width: 70px; height: 70px; background: white; border-radius: 50%; border: 5px solid #ccc;
+      z-index: 10;
+    }
+    #start_btn {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      padding: 15px 30px; font-size: 18px; font-weight: bold;
+      background-color: #007AFF; color: white; border: none; border-radius: 8px;
+      z-index: 20;
+    }
+  </style>
 </head>
 <body>
   <div id="container">
@@ -34,27 +38,76 @@
 
   <script>
     const videoElement = document.getElementById('input_video');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
     const startBtn = document.getElementById('start_btn');
 
+    // GitHubにアップロードしたイラスト（mask.png）を読み込む
+    const maskImage = new Image();
+    maskImage.src = 'mask.png'; 
+
+    // ★顔が見つかった時に毎回呼ばれる処理★
+    function onResults(results) {
+      // キャンバスのサイズをカメラ映像に合わせる
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
+
+      // 1. まずカメラの映像をそのまま描く
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+      // 2. 顔が見つかったらイラストを上から重ねて描く
+      if (results.detections.length > 0) {
+        const bbox = results.detections[0].boundingBox; // 1人目の顔の枠
+
+        // 顔のサイズより少し大きめ（1.5倍）にイラストのサイズを設定
+        const width = bbox.width * canvasElement.width * 1.5; 
+        const height = bbox.height * canvasElement.height * 1.5;
+        
+        // 顔の中心に合わせてイラストの位置を計算（少し上にずらすと自然です）
+        const x = (bbox.xMin * canvasElement.width) - (width - bbox.width * canvasElement.width) / 2;
+        const y = (bbox.yMin * canvasElement.height) - (height - bbox.height * canvasElement.height) / 2 - 30;
+
+        // イラストを描画！
+        canvasCtx.drawImage(maskImage, x, y, width, height);
+      }
+    }
+
+    // 顔認識エンジンの初期設定
+    const faceDetection = new FaceDetection({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`;
+    }});
+    faceDetection.setOptions({
+      model: 'short', // 自撮り（近い距離）用モード
+      minDetectionConfidence: 0.5 // 認識の感度
+    });
+    faceDetection.onResults(onResults);
+
+    // カメラの起動処理
     async function setupCamera() {
       try {
-        // カメラのアクセス権限をリクエスト
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user" }, // インカメラ
+          video: { facingMode: "user" },
           audio: false,
         });
         videoElement.srcObject = stream;
         
-        // 無事に起動したら起動ボタンを隠す
-        startBtn.style.display = 'none'; 
+        // 映像が流れたら、パラパラ漫画のように超高速で顔認識エンジンに映像を送り続ける
+        videoElement.addEventListener('play', () => {
+          const loop = async () => {
+            if (!videoElement.paused && !videoElement.ended) {
+              await faceDetection.send({image: videoElement});
+              requestAnimationFrame(loop); // 次の描画タイミングで再度実行
+            }
+          };
+          loop();
+        });
 
+        startBtn.style.display = 'none'; 
       } catch (err) {
-        // エラーが起きたらアラートで原因を表示する
         alert("カメラの起動に失敗しました。\n原因: " + err.name + "\n" + err.message);
       }
     }
 
-    // 読み込み直後ではなく、ボタンを押した時に起動するよう変更
     startBtn.addEventListener('click', setupCamera);
   </script>
 </body>
